@@ -1,0 +1,445 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  RECRUITER
+  HIRING_MANAGER
+  CANDIDATE
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+enum WorkplaceType {
+  ON_SITE
+  HYBRID
+  REMOTE
+}
+
+enum ApplicationStage {
+  APPLIED
+  SCREENING
+  SHORTLISTED
+  INTERVIEW
+  ASSESSMENT
+  OFFERED
+  HIRED
+  REJECTED
+}
+
+enum InterviewType {
+  TECHNICAL
+  BEHAVIORAL
+  HR
+  FINAL
+  CULTURE_FIT
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum Recommendation {
+  STRONG_HIRE
+  HIRE
+  NEUTRAL
+  NO_HIRE
+  STRONG_NO_HIRE
+}
+
+enum SubscriptionPlan {
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIAL
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  email        String    @unique
+  passwordHash String
+  phone        String?
+  avatar       String?
+  role         UserRole  @default(CANDIDATE)
+  isVerified   Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  candidateProfile      CandidateProfile?
+  organizationMembers   OrganizationMember[]
+  createdJobs           Job[]                     @relation("CreatedJobs")
+  assignedInterviews    Interview[]               @relation("Interviewer")
+  submittedFeedback     InterviewFeedback[]       @relation("InterviewerFeedback")
+  stageChanges          ApplicationStageHistory[] @relation("StageChangedBy")
+  notifications         Notification[]
+  refreshTokens         RefreshToken[]
+  passwordResetTokens   PasswordResetToken[]
+  activityLogs          ActivityLog[]
+  createdInvitations    Invitation[]              @relation("CreatedInvitations")
+
+  @@index([role])
+}
+
+model Organization {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  slug        String     @unique
+  description String?
+  website     String?
+  industry    String?
+  companySize String?
+  logo        String?
+  location    String?
+  status      OrgStatus  @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  members       OrganizationMember[]
+  jobs          Job[]
+  invitations   Invitation[]
+  subscriptions Subscription[]
+  activityLogs  ActivityLog[]
+
+  @@index([status])
+}
+
+model OrganizationMember {
+  id                 String           @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId     String           @db.ObjectId
+  userId             String           @db.ObjectId
+  organizationRole   OrgRole          @default(MEMBER)
+  invitationStatus   InvitationStatus @default(ACCEPTED)
+  joinedAt           DateTime         @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model CandidateProfile {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @unique @db.ObjectId
+  headline        String?
+  summary         String?
+  location        String?
+  experienceYears Int?     @default(0)
+  currentCompany  String?
+  currentPosition String?
+  expectedSalary  Float?
+  noticePeriod    String?
+  resumeUrl       String?
+  portfolioUrl    String?
+  linkedinUrl     String?
+  githubUrl       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills       CandidateSkill[]
+  applications Application[]
+}
+
+model Skill {
+  id   String @id @default(auto()) @map("_id") @db.ObjectId
+  name String @unique
+
+  // Relations
+  candidateSkills CandidateSkill[]
+}
+
+model CandidateSkill {
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
+  candidateId String @db.ObjectId
+  skillId     String @db.ObjectId
+  proficiency String? // e.g. Beginner, Intermediate, Expert
+
+  // Relations
+  candidate CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  skill     Skill            @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, skillId])
+  @@index([candidateId])
+  @@index([skillId])
+}
+
+model Job {
+  id                  String         @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId      String         @db.ObjectId
+  createdBy           String         @db.ObjectId
+  title               String
+  slug                String
+  description         String
+  requirements        String
+  responsibilities    String?
+  employmentType      EmploymentType @default(FULL_TIME)
+  workplaceType       WorkplaceType  @default(ON_SITE)
+  experienceMin       Int            @default(0)
+  experienceMax       Int?
+  salaryMin           Float?
+  salaryMax           Float?
+  location            String
+  department          String
+  openings            Int            @default(1)
+  status              JobStatus      @default(DRAFT)
+  applicationDeadline DateTime?
+  publishedAt         DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  // Relations
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      User          @relation("CreatedJobs", fields: [createdBy], references: [id])
+  applications Application[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([status])
+  @@index([department])
+  @@index([location])
+}
+
+model Application {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  jobId       String           @db.ObjectId
+  candidateId String           @db.ObjectId
+  resumeUrl   String
+  coverLetter String?
+  status      ApplicationStage @default(APPLIED)
+  source      String?          @default("CAREERS_PAGE")
+  appliedAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Relations
+  job          Job                       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate    CandidateProfile          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  stageHistory ApplicationStageHistory[]
+  interviews   Interview[]
+
+  @@unique([jobId, candidateId])
+  @@index([jobId])
+  @@index([candidateId])
+  @@index([status])
+}
+
+model ApplicationStageHistory {
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  applicationId String            @db.ObjectId
+  previousStage ApplicationStage?
+  newStage      ApplicationStage
+  changedBy     String?           @db.ObjectId
+  notes         String?
+  createdAt     DateTime          @default(now())
+
+  // Relations
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  changer     User?       @relation("StageChangedBy", fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([applicationId])
+}
+
+model Interview {
+  id            String          @id @default(auto()) @map("_id") @db.ObjectId
+  applicationId String          @db.ObjectId
+  interviewerId String          @db.ObjectId
+  scheduledAt   DateTime
+  duration      Int             @default(45) // minutes
+  interviewType InterviewType   @default(TECHNICAL)
+  meetingLink   String?
+  location      String?
+  status        InterviewStatus @default(SCHEDULED)
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  application Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interviewer User                @relation("Interviewer", fields: [interviewerId], references: [id], onDelete: Cascade)
+  feedback    InterviewFeedback[]
+
+  @@index([applicationId])
+  @@index([interviewerId])
+  @@index([scheduledAt])
+}
+
+model InterviewFeedback {
+  id                  String         @id @default(auto()) @map("_id") @db.ObjectId
+  interviewId         String         @db.ObjectId
+  interviewerId       String         @db.ObjectId
+  rating              Int // 1 to 5
+  technicalSkills     Int? // 1 to 5
+  communicationSkills Int? // 1 to 5
+  strengths           String?
+  weaknesses          String?
+  comments            String
+  recommendation      Recommendation @default(NEUTRAL)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  // Relations
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  interviewer User      @relation("InterviewerFeedback", fields: [interviewerId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId])
+  @@index([interviewerId])
+}
+
+model Notification {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @db.ObjectId
+  title           String
+  message         String
+  type            String   @default("INFO")
+  isRead          Boolean  @default(false)
+  relatedEntityId String?
+  createdAt       DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Invitation {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String           @db.ObjectId
+  email          String
+  role           OrgRole          @default(MEMBER)
+  tokenHash      String           @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdBy      String           @db.ObjectId
+  createdAt      DateTime         @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      User         @relation("CreatedInvitations", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String    @db.ObjectId
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String    @db.ObjectId
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ActivityLog {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String?       @db.ObjectId
+  userId         String?       @db.ObjectId
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  ipAddress      String?
+  createdAt      DateTime      @default(now())
+
+  // Relations
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+}
+
+model Subscription {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String             @db.ObjectId
+  plan           SubscriptionPlan   @default(STARTER)
+  status         SubscriptionStatus @default(ACTIVE)
+  startsAt       DateTime           @default(now())
+  expiresAt      DateTime?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model SystemSetting {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
